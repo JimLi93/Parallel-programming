@@ -1,8 +1,9 @@
-//Success
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
 #include <omp.h>
+
+#include <time.h>
 
 const int INF = ((1 << 30) - 1);
 const int V = 10000;
@@ -18,24 +19,47 @@ static int Dist[V][V];
 int num_of_threads;
 
 int main(int argc, char* argv[]) {
+    // Measure Time Start
+    struct timespec start, end, temp;
+    double time_used;
+    clock_gettime(CLOCK_MONOTONIC, &start);
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
-    //printf("%d cpus available\n", CPU_COUNT(&cpu_set));
+    printf("%d cpus available\n", CPU_COUNT(&cpu_set));
     num_of_threads = CPU_COUNT(&cpu_set);
     omp_set_num_threads(num_of_threads);
     input(argv[1]);
-    int B = 16;
+    int B = 32;
     block_FW(B);
     output(argv[2]);
+    // Measure Time Endx
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    if((end.tv_nsec - start.tv_nsec) < 0){
+        temp.tv_sec = end.tv_sec-start.tv_sec-1;
+        temp.tv_nsec = 1000000000 +  end.tv_nsec-start.tv_nsec;
+    }
+    else {
+        temp.tv_sec = end.tv_sec-start.tv_sec;
+        temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+    }
+    time_used = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
+    printf("%f second\n", time_used);
     return 0;
 }
 
 void input(char* infile) {
+    // Measure Time Start
+    struct timespec start, end, temp;
+    double time_used;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+
     FILE* file = fopen(infile, "rb");
     fread(&n, sizeof(int), 1, file);
+    printf("n: %d\n", n);
     fread(&m, sizeof(int), 1, file);
+    printf("m: %d\n", m);
 
-    //int chunksize = n/num_of_threads + 1;
+    int chunksize = n/num_of_threads + 1;
 
     #pragma omp parallel for simd collapse(2)
     for (int i = 0; i < n; ++i) {
@@ -43,7 +67,7 @@ void input(char* infile) {
             Dist[i][j] = INF;
         }
     }
-    #pragma omp simd
+    #pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < n; ++i) {
             Dist[i][i] = 0;
     }
@@ -54,18 +78,27 @@ void input(char* infile) {
         Dist[pair[0]][pair[1]] = pair[2];
     }
     fclose(file);
+
+    // Measure Time Endx
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    if((end.tv_nsec - start.tv_nsec) < 0){
+        temp.tv_sec = end.tv_sec-start.tv_sec-1;
+        temp.tv_nsec = 1000000000 +  end.tv_nsec-start.tv_nsec;
+    }
+    else {
+        temp.tv_sec = end.tv_sec-start.tv_sec;
+        temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+    }
+    time_used = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
+    printf("%f second\n", time_used);
 }
 
 void output(char* outFileName) {
     FILE* outfile = fopen(outFileName, "w");
-    #pragma omp parallel for simd collapse(2)
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < n; ++j) {
-            Dist[i][j] = INF * (Dist[i][j] >= INF) + Dist[i][j] * (Dist[i][j] < INF);
-            //if (Dist[i][j] >= INF) Dist[i][j] = INF;
+            if (Dist[i][j] >= INF) Dist[i][j] = INF;
         }
-    }
-    for (int i = 0; i < n; ++i) {
         fwrite(Dist[i], sizeof(int), n, outfile);
     }
     fclose(outfile);
@@ -105,14 +138,13 @@ void cal(
 
     #pragma omp parallel for schedule(dynamic)
     for (int b_i = block_start_x; b_i < block_end_x; ++b_i) {
-
-        int block_internal_start_x = b_i * B;
-        int block_internal_end_x = (b_i + 1) * B;
-        if (block_internal_end_x > n) block_internal_end_x = n;
         
         for (int b_j = block_start_y; b_j < block_end_y; ++b_j) {
             // To calculate B*B elements in the block (b_i, b_j)
             // For each block, it need to compute B times
+            int block_internal_start_x = b_i * B;
+        int block_internal_end_x = (b_i + 1) * B;
+        if (block_internal_end_x > n) block_internal_end_x = n;
             int block_internal_start_y = b_j * B;
             int block_internal_end_y = (b_j + 1) * B;
             if (block_internal_end_y > n) block_internal_end_y = n;
