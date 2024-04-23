@@ -6,7 +6,7 @@ Solve the all-pairs shortest path problem by Blocked Floyd-Warshall algorithm us
 
 ## GPU Information
 
-<img src="https://github.com/JimLi93/Parallel-programming/blob/main/HW3-All-Pairs-Shortest-Path/img/GPU_INFO.png" alt="Pixels Equation" width="400">
+<img src="https://github.com/JimLi93/Parallel-programming/blob/main/HW3-All-Pairs-Shortest-Path/img/GPU_INFO.png" alt="GPU information" width="400">
 
 ## Code Specification
 
