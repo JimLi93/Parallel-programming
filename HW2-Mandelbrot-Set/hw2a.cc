@@ -1,3 +1,5 @@
+//success with new type of packing.
+//no time
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -11,13 +13,20 @@
 
 #include <pthread.h>
 #include <math.h>
+#include <emmintrin.h>
+
 
 int iters, width, height, num_threads, *image;
 double left, right, lower, upper;
 int cur_row = 0;
 int cur_col = 0;
-bool valid;
+//bool valid;
 int divide_part, divide_size, threshold_width;
+
+struct ThreadData{
+    bool valid;
+    int id;
+};
 pthread_mutex_t mutex;
 
 void write_png(const char* filename, int iters, int width, int height, const int* buffer) {
@@ -57,12 +66,19 @@ void write_png(const char* filename, int iters, int width, int height, const int
     fclose(fp);
 }
 
-void *mandelbrot(void *id){
-    // Get partition
+void *mandelbrot(void *argv){
+
+    ThreadData *arg = (ThreadData*) argv;
+    bool valid = arg->valid;
+    int id = arg->id;
     int work_on_row;
     int start_col;
     int end_col;
+    __m128d v_two = _mm_set_pd1(2);
+    __m128d v_four = _mm_set_pd1(4);
     while(valid){
+
+        // Get partition
         pthread_mutex_lock(&mutex);
         if(cur_row == height){
             valid = false;
@@ -81,29 +97,75 @@ void *mandelbrot(void *id){
             cur_col = end_col;
         }
         pthread_mutex_unlock(&mutex);
+
+        // Start calculate mandelbrot set of partition
         if(valid){
 
         double y0 = work_on_row * ((upper - lower) / height) + lower;
-        for (int i = start_col; i < end_col; ++i) {
+        __m128d v_y0 = _mm_load_pd1(&y0);
+        for (int i = start_col; i < end_col; i=i+2) {
+            if(i+1<width){
+            double x0[2] = {i * ((right - left) / width) + left, (i+1) * ((right - left) / width) + left};
+            __m128d v_x0 = _mm_load_pd(x0);
+            __m128d v_x = _mm_setzero_pd();
+            __m128d v_y = _mm_setzero_pd();
+            __m128d v_x2 = _mm_setzero_pd();
+            __m128d v_y2 = _mm_setzero_pd();
+            //__m128d v_length_squared = _mm_setzero_pd();
+            int repeats[2] = {0,0};
+            int lock[2] = {0,0};
+            while (!lock[0] || !lock[1]) {
+                __m128d v_tmp = _mm_add_pd(v_x2,v_y2);
+                if(!lock[0]){
+                    if(repeats[0] < iters && _mm_comilt_sd(v_tmp, v_four)){
+                        repeats[0]++;
+                    }
+                    else {
+                        lock[0] = 1;
+                    }
+                }
+                if(!lock[1]){
+                    if(repeats[1] < iters && _mm_comilt_sd(_mm_shuffle_pd(v_tmp,v_tmp,1), v_four)){
+                        repeats[1]++;
+                    }
+                    else {
+                        lock[1] = 1;
+                    }
+                }
+                v_y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(v_x,v_y), v_two), v_y0);
+                v_x = _mm_add_pd(_mm_sub_pd(v_x2,v_y2), v_x0);
+                v_x2 = _mm_mul_pd(v_x,v_x);
+                v_y2 = _mm_mul_pd(v_y,v_y);
+            }
+            image[work_on_row * width+i] = repeats[0];
+            image[work_on_row * width+i+1] = repeats[1];
+
+            }
+            
+            else {
             double x0 = i * ((right - left) / width) + left;
 
             int repeats = 0;
             double x = 0;
             double y = 0;
-            double length_squared = 0;
-            while (repeats < iters && length_squared < 4) {
-                double temp = x * x - y * y + x0;
+            double x2 = 0;
+            double y2 = 0;
+            //double length_squared = 0;
+            while (repeats < iters && x2+y2 < 4) {
                 y = 2 * x * y + y0;
-                x = temp;
-                length_squared = x * x + y * y;
+                x = x2 - y2 + x0;
+                x2 = x * x;
+                y2 = y * y;
                 ++repeats;
             }
             image[work_on_row * width + i] = repeats;
+            }
         }
 
         }
 
     }
+
     pthread_exit(NULL);
 
        
@@ -131,22 +193,26 @@ int main(int argc, char** argv) {
     image = (int*)malloc(width * height * sizeof(int));
     assert(image);
 
-
     num_threads = CPU_COUNT(&cpu_set);
     int threadID[num_threads];
     pthread_t thread[num_threads];
     pthread_mutex_init(&mutex, NULL);
 
+
+    ThreadData args[num_threads];
     divide_part = num_threads;
     divide_size = floor(width / divide_part);
+    if(divide_size%2 == 1) divide_size = divide_size++;
     threshold_width = divide_size * (divide_part - 1) ;
 
     int rc;
-    valid = true;
+    //valid = true;
     for(int i=0;i<num_threads;i++){
+        args[i].valid = true;
+        args[i].id = i;
         threadID[i] = i;
         //rc = pthread_create(&thread[i], NULL, mandelbrot, (void*)&(threadID[i]));
-        pthread_create(&thread[i], NULL, mandelbrot, (void*)&(threadID[i]));
+        pthread_create(&thread[i], NULL, mandelbrot, (void*)&(args[i]));
         //if(rc) {
         //    printf("ERROR; return code from pthread_create() is %d\n", rc);
         //    exit(-1);
@@ -159,7 +225,9 @@ int main(int argc, char** argv) {
 
     pthread_mutex_destroy(&mutex);
 
+
     /* draw and cleanup */
     write_png(filename, iters, width, height, image);
     free(image);
+
 }
