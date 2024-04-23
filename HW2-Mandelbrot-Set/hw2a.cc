@@ -1,5 +1,6 @@
 //success with new type of packing.
-//no time
+//time
+
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
@@ -14,7 +15,9 @@
 #include <pthread.h>
 #include <math.h>
 #include <emmintrin.h>
+#include <sys/time.h>
 
+#define CHECK_PERIOD 20
 
 int iters, width, height, num_threads, *image;
 double left, right, lower, upper;
@@ -44,6 +47,7 @@ void write_png(const char* filename, int iters, int width, int height, const int
     png_set_compression_level(png_ptr, 1);
     size_t row_size = 3 * width * sizeof(png_byte);
     png_bytep row = (png_bytep)malloc(row_size);
+    #pragma omp parallel for schedule(dynamic, 10)
     for (int y = 0; y < height; ++y) {
         memset(row, 0, row_size);
         for (int x = 0; x < width; ++x) {
@@ -67,6 +71,8 @@ void write_png(const char* filename, int iters, int width, int height, const int
 }
 
 void *mandelbrot(void *argv){
+    struct timeval start_time;
+    gettimeofday(&start_time, NULL);
 
     ThreadData *arg = (ThreadData*) argv;
     bool valid = arg->valid;
@@ -166,12 +172,23 @@ void *mandelbrot(void *argv){
 
     }
 
+    // Get the current time after executing the thread
+    struct timeval end_time;
+    gettimeofday(&end_time, NULL);
+    // Calculate the elapsed time
+    long elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000 +
+                        (end_time.tv_usec - start_time.tv_usec);
+
+    // Print the elapsed time for the thread
+    printf("Thread %d took %ld microseconds\n", id, elapsed_time);
     pthread_exit(NULL);
 
        
 }
 
 int main(int argc, char** argv) {
+    struct timeval start_time;
+    gettimeofday(&start_time, NULL);
     /* detect how many CPUs are available */
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
@@ -229,5 +246,13 @@ int main(int argc, char** argv) {
     /* draw and cleanup */
     write_png(filename, iters, width, height, image);
     free(image);
+    // Get the current time after executing the thread
+    struct timeval end_time;
+    gettimeofday(&end_time, NULL);
+    // Calculate the elapsed time
+    long elapsed_time = (end_time.tv_sec - start_time.tv_sec) * 1000000 +
+                        (end_time.tv_usec - start_time.tv_usec);
 
+    // Print the elapsed time for the thread
+    printf("Program took %ld microseconds\n", elapsed_time);
 }
