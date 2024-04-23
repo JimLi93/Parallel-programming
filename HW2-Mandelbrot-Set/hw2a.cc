@@ -12,14 +12,12 @@
 #include <pthread.h>
 #include <math.h>
 
-struct ThreadData{
-    bool idle;
-    int id;
-};
-
 int iters, width, height, num_threads, *image;
 double left, right, lower, upper;
 int cur_row = 0;
+int cur_col = 0;
+bool valid;
+int divide_part, divide_size, threshold_width;
 pthread_mutex_t mutex;
 
 void write_png(const char* filename, int iters, int width, int height, const int* buffer) {
@@ -59,72 +57,55 @@ void write_png(const char* filename, int iters, int width, int height, const int
     fclose(fp);
 }
 
-void *mandelbrot(void *argv){
-    ThreadData *arg = (ThreadData*) argv;
-    bool idle = arg->idle;
-    int id = arg->id;
+void *mandelbrot(void *id){
+    // Get partition
     int work_on_row;
-    bool end_thread = false;
-    while(1){
-        if(idle == false){
-            work_on_row = id;
-            //printf("Thread %d working on row %d\n", id, work_on_row);
-            double y0 = work_on_row * ((upper - lower) / height) + lower;
-            for (int i = 0; i < width; ++i) {
-                double x0 = i * ((right - left) / width) + left;
-                int repeats = 0;
-                double x = 0;
-                double y = 0;
-                double length_squared = 0;
-                while (repeats < iters && length_squared < 4) {
-                    double temp = x * x - y * y + x0;
-                    y = 2 * x * y + y0;
-                    x = temp;
-                    length_squared = x * x + y * y;
-                    ++repeats;
-                }
-                image[work_on_row * width + i] = repeats;
-            }
-            idle = true;
-        }
-    
+    int start_col;
+    int end_col;
+    while(valid){
         pthread_mutex_lock(&mutex);
-        if(cur_row >= height){
-            end_thread = true;
+        if(cur_row == height){
+            valid = false;
+        }
+        else if(cur_col == threshold_width){
+            work_on_row = cur_row;
+            start_col = cur_col;
+            end_col = width;
+            cur_row = cur_row + 1;
+            cur_col = 0;
         }
         else {
             work_on_row = cur_row;
-            cur_row = cur_row + 1;
-            //end_thread = false;
+            start_col = cur_col;
+            end_col = cur_col + divide_size;
+            cur_col = end_col;
         }
         pthread_mutex_unlock(&mutex);
+        if(valid){
 
-        if(end_thread == true) {
-            pthread_exit(NULL);
-        }
-        
-        else if(end_thread == false){
-            //printf("Thread %d working on row %d\n", id, work_on_row);
-            double y0 = work_on_row * ((upper - lower) / height) + lower;
-            for (int i = 0; i < width; ++i) {
-                double x0 = i * ((right - left) / width) + left;
-                int repeats = 0;
-                double x = 0;
-                double y = 0;
-                double length_squared = 0;
-                while (repeats < iters && length_squared < 4) {
-                    double temp = x * x - y * y + x0;
-                    y = 2 * x * y + y0;
-                    x = temp;
-                    length_squared = x * x + y * y;
-                    ++repeats;
-                }
-                image[work_on_row * width + i] = repeats;
+        double y0 = work_on_row * ((upper - lower) / height) + lower;
+        for (int i = start_col; i < end_col; ++i) {
+            double x0 = i * ((right - left) / width) + left;
+
+            int repeats = 0;
+            double x = 0;
+            double y = 0;
+            double length_squared = 0;
+            while (repeats < iters && length_squared < 4) {
+                double temp = x * x - y * y + x0;
+                y = 2 * x * y + y0;
+                x = temp;
+                length_squared = x * x + y * y;
+                ++repeats;
             }
+            image[work_on_row * width + i] = repeats;
         }
-    }
 
-   pthread_exit(NULL);
+        }
+
+    }
+    pthread_exit(NULL);
+
        
 }
 
@@ -155,36 +136,24 @@ int main(int argc, char** argv) {
     int threadID[num_threads];
     pthread_t thread[num_threads];
     pthread_mutex_init(&mutex, NULL);
-    
 
-    ThreadData args[num_threads];
+    divide_part = num_threads;
+    divide_size = floor(width / divide_part);
+    threshold_width = divide_size * (divide_part - 1) ;
+
     int rc;
-    int max_threads = 0;
-    cur_row = num_threads;
-    
+    valid = true;
     for(int i=0;i<num_threads;i++){
         threadID[i] = i;
-        if(i >= height){
-            max_threads = i;
-            printf("Early exit\n");
-            break;
-        }
-        else{
-            args[i].idle = false;
-            args[i].id = i;
-            pthread_create(&thread[i], NULL, mandelbrot, (void*)&(args[i]));
-        } 
         //rc = pthread_create(&thread[i], NULL, mandelbrot, (void*)&(threadID[i]));
+        pthread_create(&thread[i], NULL, mandelbrot, (void*)&(threadID[i]));
         //if(rc) {
         //    printf("ERROR; return code from pthread_create() is %d\n", rc);
         //    exit(-1);
         //}
     }
-    printf("%d %d\n", max_threads, num_threads);
-    if(max_threads == 0) max_threads = num_threads;
-    printf("%d %d\n", max_threads, num_threads);
 
-    for(int i=0;i<max_threads;i++){
+    for(int i=0;i<num_threads;i++){
         pthread_join(thread[i], NULL);
     }
 
