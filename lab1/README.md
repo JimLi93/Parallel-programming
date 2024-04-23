@@ -1,4 +1,4 @@
-# Lab1 Pixels in Circle
+# Lab1 Pixels in Circle (MPI)
 
 ## Goal
 
