@@ -4,6 +4,10 @@
 
 Solve the all-pairs shortest path problem by Blocked Floyd-Warshall algorithm using OpenMP and CUDA.
 
+## GPU Information
+
+<img src="https://github.com/JimLi93/Parallel-programming/blob/main/HW3-All-Pairs-Shortest-Path/img/GPU_INFO.png" alt="Pixels Equation" width="400">
+
 ## Code Specification
 
 `hw3-1.cc` : CPU version. Use OpenMP to parallelize the computation.
